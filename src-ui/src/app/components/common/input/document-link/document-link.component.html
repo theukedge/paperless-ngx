@@ -28,8 +28,8 @@
           <ng-template ng-label-tmp let-document="item">
             <div class="d-flex align-items-center">
               <i-bs (click)="unselect(document)" name="x"></i-bs>
-              <a routerLink="/documents/{{document.id}}" class="badge bg-light text-primary" (mousedown)="$event.stopImmediatePropagation();">
-                <i-bs width="0.9em" height="0.9em" name="file-text"></i-bs>&nbsp;<span>{{document.title}}</span>
+              <a routerLink="/documents/{{document.id}}" class="badge bg-light text-primary d-flex text-start ws-normal w-100" (mousedown)="$event.stopImmediatePropagation();">
+                <i-bs width="0.9em" height="0.9em" name="file-text"></i-bs><span class="ms-2">{{document.title}}</span>
               </a>
             </div>
           </ng-template>
@@ -38,7 +38,7 @@
             <div class="visually-hidden" i18n>Loading...</div>
           </ng-template>
           <ng-template ng-option-tmp let-document="item" let-index="index" let-search="searchTerm">
-            <div>{{document.title}} <small class="text-muted">({{document.created | customDate:'shortDate'}})</small></div>
+            <div class="d-flex text-start ws-normal">{{document.title}}<small class="text-muted ms-1">({{document.created | customDate:'shortDate'}})</small></div>
           </ng-template>
         </ng-select>
       </div>
