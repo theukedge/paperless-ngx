@@ -468,11 +468,16 @@ ACCOUNT_EMAIL_VERIFICATION = os.getenv(
     "optional",
 )
 
-so_only = __get_boolean("PAPERLESS_SOCIALACCOUNT_ONLY")
+so_only = __get_boolean("PAPERLESS_DISABLE_REGULAR_LOGIN_API")
 if so_only:
     ACCOUNT_EMAIL_VERIFICATION = "none"
     ACCOUNT_EMAIL_VERIFICATION_METHOD = "none"
     SOCIALACCOUNT_ONLY = True
+    DISABLE_REGULAR_LOGIN_API = True
+    REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"].insert(
+        0,
+        "paperless.auth.PaperlessDisableLocalAuthenticationOverride",
+    )
 
 ACCOUNT_SESSION_REMEMBER = __get_boolean("PAPERLESS_ACCOUNT_SESSION_REMEMBER")
 

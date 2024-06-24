@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 from django.http import HttpRequest
 from django.utils.deprecation import MiddlewareMixin
 from rest_framework import authentication
+from rest_framework import exceptions
 
 logger = logging.getLogger("paperless.auth")
 
@@ -70,3 +71,10 @@ class PaperlessRemoteUserAuthentication(authentication.RemoteUserAuthentication)
     """
 
     header = settings.HTTP_REMOTE_USER_HEADER_NAME
+
+
+class PaperlessDisableLocalAuthenticationOverride(authentication.BasicAuthentication):
+    def authenticate(self, request):
+        if settings.DISABLE_REGULAR_LOGIN_API:
+            raise exceptions.AuthenticationFailed("Regular login is disabled")
+        return super().authenticate(request)

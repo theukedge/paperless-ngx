@@ -594,9 +594,19 @@ system. See the corresponding
 
 #### [`PAPERLESS_DISABLE_REGULAR_LOGIN=<bool>`](#PAPERLESS_DISABLE_REGULAR_LOGIN) {#PAPERLESS_DISABLE_REGULAR_LOGIN}
 
-: Disables the regular frontend username / password login, i.e. once you have setup SSO. Note that this setting does not disable the Django admin login. To prevent logins directly to Django, consider blocking `/admin/` in your [web server or reverse proxy configuration](https://github.com/paperless-ngx/paperless-ngx/wiki/Using-a-Reverse-Proxy-with-Paperless-ngx).
+: Disables the regular frontend username / password login, i.e. once you have setup SSO. To disable API access, see [`PAPERLESS_DISABLE_REGULAR_LOGIN_API`](#PAPERLESS_DISABLE_REGULAR_LOGIN_API). Note that this setting does not disable the Django admin login. To prevent logins directly to Django, consider blocking `/admin/` in your [web server or reverse proxy configuration](https://github.com/paperless-ngx/paperless-ngx/wiki/Using-a-Reverse-Proxy-with-Paperless-ngx).
 
     Defaults to False
+
+### [`PAPERLESS_DISABLE_REGULAR_LOGIN_API`=<bool>](#PAPERLESS_DISABLE_REGULAR_LOGIN_API) {#PAPERLESS_DISABLE_REGULAR_LOGIN_API}
+
+: Completely disables all logins related to regular (non-SSO) accounts. This setting will also disable the login form similar to the behavior of [`PAPERLESS_DISABLE_REGULAR_LOGIN`](#PAPERLESS_DISABLE_REGULAR_LOGIN) so you do not need to set both. Note that this setting does not disable the Django admin login. To prevent logins directly to Django, consider blocking `/admin/` in your [web server or reverse proxy configuration](https://github.com/paperless-ngx/paperless-ngx/wiki/Using-a-Reverse-Proxy-with-Paperless-ngx).
+
+    Defaults to False
+
+!!! warning
+
+    Enabling this setting disables all email account verification, regardless of other settings.
 
 #### [`PAPERLESS_ACCOUNT_SESSION_REMEMBER=<bool>`](#PAPERLESS_ACCOUNT_SESSION_REMEMBER) {#PAPERLESS_ACCOUNT_SESSION_REMEMBER}
 
