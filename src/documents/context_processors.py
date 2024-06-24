@@ -18,9 +18,13 @@ def settings(request):
     )
 
     return {
-        "EMAIL_ENABLED": django_settings.EMAIL_HOST != "localhost"
-        or django_settings.EMAIL_HOST_USER != "",
-        "DISABLE_REGULAR_LOGIN": django_settings.DISABLE_REGULAR_LOGIN,
+        "EMAIL_ENABLED": not django_settings.SOCIALACCOUNT_ONLY
+        and (
+            django_settings.EMAIL_HOST != "localhost"
+            or django_settings.EMAIL_HOST_USER != ""
+        ),
+        "DISABLE_REGULAR_LOGIN": django_settings.DISABLE_REGULAR_LOGIN
+        or django_settings.SOCIALACCOUNT_ONLY,
         "ACCOUNT_ALLOW_SIGNUPS": django_settings.ACCOUNT_ALLOW_SIGNUPS,
         "domain": getattr(django_settings, "PAPERLESS_URL", request.get_host()),
         "APP_TITLE": app_title,
