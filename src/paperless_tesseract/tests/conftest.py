@@ -28,3 +28,38 @@ def simple_digital_pdf(sample_dir: Path) -> Path:
 @pytest.fixture(scope="session")
 def encrypted_digital_pdf(sample_dir: Path) -> Path:
     return sample_dir / "encrypted.pdf"
+
+
+@pytest.fixture(scope="session")
+def multi_page_digital_pdf(sample_dir: Path) -> Path:
+    return sample_dir / "multi-page-digital.pdf"
+
+
+@pytest.fixture(scope="session")
+def multi_page_imagesl_pdf(sample_dir: Path) -> Path:
+    return sample_dir / "multi-page-images.pdf"
+
+
+@pytest.fixture(scope="session")
+def pdf_with_form(sample_dir: Path) -> Path:
+    return sample_dir / "with-form.pdf"
+
+
+@pytest.fixture(scope="session")
+def signed_pdf(sample_dir: Path) -> Path:
+    return sample_dir / "signed.pdf"
+
+
+@pytest.fixture(scope="session")
+def simple_no_dpi_png(sample_dir: Path) -> Path:
+    return sample_dir / "simple-no-dpi.png"
+
+
+@pytest.fixture(scope="session")
+def simple_png(sample_dir: Path) -> Path:
+    return sample_dir / "simple.png"
+
+
+@pytest.fixture(scope="session")
+def png_with_alpha(sample_dir: Path) -> Path:
+    return sample_dir / "simple-alpha.png"

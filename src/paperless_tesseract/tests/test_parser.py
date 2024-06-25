@@ -1,7 +1,6 @@
 import os
 import shutil
 import tempfile
-import uuid
 from pathlib import Path
 from unittest import mock
 
@@ -9,6 +8,8 @@ import pytest
 from django.test import TestCase
 from django.test import override_settings
 from ocrmypdf import SubprocessOutputError
+from pytest_django.fixtures import SettingsWrapper
+from pytest_mock import MockerFixture
 
 from documents.parsers import ParseError
 from documents.parsers import run_convert
@@ -19,8 +20,6 @@ from paperless_tesseract.parsers import post_process_text
 
 
 class TestParser:
-    SAMPLE_FILES = Path(__file__).resolve().parent / "samples"
-
     def assertContainsStrings(self, content, strings):
         # Asserts that all strings appear in content, in the given order.
         indices = []
@@ -68,177 +67,226 @@ class TestParser:
         assert thumb.exists()
         assert thumb.is_file()
 
-    @mock.patch("documents.parsers.run_convert")
-    def test_thumbnail_fallback(self, m):
+    @pytest.mark.django_db()
+    def test_thumbnail_fallback(
+        self,
+        mocker: MockerFixture,
+        tesseract_parser: RasterisedDocumentParser,
+        simple_digital_pdf: Path,
+    ):
         def call_convert(input_file, output_file, **kwargs):
-            if ".pdf" in input_file:
+            if ".pdf" in str(input_file):
                 raise ParseError("Does not compute.")
             else:
                 run_convert(input_file=input_file, output_file=output_file, **kwargs)
 
-        m.side_effect = call_convert
+        mocker.patch("documents.parsers.run_convert").side_effect = call_convert
 
-        parser = RasterisedDocumentParser(uuid.uuid4())
-        thumb = parser.get_thumbnail(
-            os.path.join(self.SAMPLE_FILES, "simple-digital.pdf"),
-            "application/pdf",
-        )
-        self.assertIsFile(thumb)
+        thumb = tesseract_parser.get_thumbnail(simple_digital_pdf, "application/pdf")
 
-    def test_thumbnail_encrypted(self):
-        parser = RasterisedDocumentParser(uuid.uuid4())
-        thumb = parser.get_thumbnail(
-            os.path.join(self.SAMPLE_FILES, "encrypted.pdf"),
-            "application/pdf",
-        )
-        self.assertIsFile(thumb)
+        assert thumb.exists()
+        assert thumb.is_file()
 
-    def test_get_dpi(self):
-        parser = RasterisedDocumentParser(None)
+    @pytest.mark.django_db()
+    def test_thumbnail_encrypted(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        encrypted_digital_pdf: Path,
+    ):
+        thumb = tesseract_parser.get_thumbnail(encrypted_digital_pdf, "application/pdf")
 
-        dpi = parser.get_dpi(os.path.join(self.SAMPLE_FILES, "simple-no-dpi.png"))
-        self.assertEqual(dpi, None)
+        assert thumb.exists()
+        assert thumb.is_file()
 
-        dpi = parser.get_dpi(os.path.join(self.SAMPLE_FILES, "simple.png"))
-        self.assertEqual(dpi, 72)
+    @pytest.mark.django_db()
+    def test_get_dpi(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        simple_no_dpi_png: Path,
+        simple_png: Path,
+    ):
+        assert tesseract_parser.get_dpi(simple_no_dpi_png) is None
 
-    def test_simple_digital(self):
-        parser = RasterisedDocumentParser(None)
+        assert tesseract_parser.get_dpi(simple_png) == 72
 
-        parser.parse(
-            os.path.join(self.SAMPLE_FILES, "simple-digital.pdf"),
-            "application/pdf",
-        )
-
-        self.assertIsFile(parser.archive_path)
-
-        self.assertContainsStrings(parser.get_text(), ["This is a test document."])
-
-    def test_with_form(self):
-        parser = RasterisedDocumentParser(None)
-
-        parser.parse(
-            os.path.join(self.SAMPLE_FILES, "with-form.pdf"),
+    @pytest.mark.django_db()
+    def test_simple_digital(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        simple_digital_pdf: Path,
+    ):
+        tesseract_parser.parse(
+            simple_digital_pdf,
             "application/pdf",
         )
 
-        self.assertIsFile(parser.archive_path)
+        assert tesseract_parser.archive_path is not None
+        assert tesseract_parser.archive_path.exists()
+        assert tesseract_parser.archive_path.is_file()
 
         self.assertContainsStrings(
-            parser.get_text(),
+            tesseract_parser.get_text(),
+            ["This is a test document."],
+        )
+
+    @pytest.mark.django_db()
+    def test_with_form(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        pdf_with_form: Path,
+    ):
+        tesseract_parser.parse(pdf_with_form, "application/pdf")
+
+        assert tesseract_parser.archive_path is not None
+        assert tesseract_parser.archive_path.exists()
+        assert tesseract_parser.archive_path.is_file()
+
+        self.assertContainsStrings(
+            tesseract_parser.get_text(),
             ["Please enter your name in here:", "This is a PDF document with a form."],
         )
 
-    @override_settings(OCR_MODE="redo")
-    def test_with_form_error(self):
-        parser = RasterisedDocumentParser(None)
+    @pytest.mark.django_db()
+    def test_with_form_error(
+        self,
+        settings: SettingsWrapper,
+        tesseract_parser: RasterisedDocumentParser,
+        pdf_with_form: Path,
+    ):
+        settings.OCR_MODE = "redo"
 
-        parser.parse(
-            os.path.join(self.SAMPLE_FILES, "with-form.pdf"),
+        tesseract_parser.parse(
+            pdf_with_form,
             "application/pdf",
         )
 
-        self.assertIsNone(parser.archive_path)
+        assert tesseract_parser.archive_path is not None
         self.assertContainsStrings(
-            parser.get_text(),
+            tesseract_parser.get_text(),
             ["Please enter your name in here:", "This is a PDF document with a form."],
         )
 
-    @override_settings(OCR_MODE="skip")
-    def test_signed(self):
-        parser = RasterisedDocumentParser(None)
+    @pytest.mark.django_db()
+    def test_signed(
+        self,
+        settings: SettingsWrapper,
+        tesseract_parser: RasterisedDocumentParser,
+        signed_pdf: Path,
+    ):
+        settings.OCR_MODE = "skip"
 
-        parser.parse(os.path.join(self.SAMPLE_FILES, "signed.pdf"), "application/pdf")
+        tesseract_parser.parse(signed_pdf, "application/pdf")
 
-        self.assertIsNone(parser.archive_path)
+        assert tesseract_parser.archive_path is None
         self.assertContainsStrings(
-            parser.get_text(),
+            tesseract_parser.get_text(),
             [
                 "This is a digitally signed PDF, created with Acrobat Pro for the Paperless project to enable",
                 "automated testing of signed/encrypted PDFs",
             ],
         )
 
-    @override_settings(OCR_MODE="skip")
-    def test_encrypted(self):
-        parser = RasterisedDocumentParser(None)
+    @pytest.mark.django_db()
+    def test_encrypted(
+        self,
+        settings: SettingsWrapper,
+        tesseract_parser: RasterisedDocumentParser,
+        encrypted_digital_pdf: Path,
+    ):
+        settings.OCR_MODE = "skip"
 
-        parser.parse(
-            os.path.join(self.SAMPLE_FILES, "encrypted.pdf"),
-            "application/pdf",
+        tesseract_parser.parse(encrypted_digital_pdf, "application/pdf")
+
+        assert tesseract_parser.archive_path is None
+        assert tesseract_parser.get_text() == ""
+
+    @pytest.mark.django_db()
+    def test_with_form_error_no_text(
+        self,
+        settings: SettingsWrapper,
+        tesseract_parser: RasterisedDocumentParser,
+        pdf_with_form: Path,
+    ):
+        settings.OCR_MODE = "redo"
+
+        tesseract_parser.parse(pdf_with_form, "application/pdf")
+
+        self.assertContainsStrings(
+            tesseract_parser.get_text(),
+            ["Please enter your name in here:", "This is a PDF document with a form."],
         )
 
-        self.assertIsNone(parser.archive_path)
-        self.assertEqual(parser.get_text(), "")
-
-    @override_settings(OCR_MODE="redo")
-    def test_with_form_error_notext(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
-            os.path.join(self.SAMPLE_FILES, "with-form.pdf"),
+    @pytest.mark.django_db()
+    def test_with_form_force(
+        self,
+        settings: SettingsWrapper,
+        tesseract_parser: RasterisedDocumentParser,
+        pdf_with_form: Path,
+    ):
+        settings.OCR_MODE = "force"
+        tesseract_parser.parse(
+            pdf_with_form,
             "application/pdf",
         )
 
         self.assertContainsStrings(
-            parser.get_text(),
+            tesseract_parser.get_text(),
             ["Please enter your name in here:", "This is a PDF document with a form."],
         )
 
-    @override_settings(OCR_MODE="force")
-    def test_with_form_force(self):
-        parser = RasterisedDocumentParser(None)
+    @pytest.mark.django_db()
+    def test_image_simple(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        simple_png: Path,
+    ):
+        tesseract_parser.parse(simple_png, "image/png")
 
-        parser.parse(
-            os.path.join(self.SAMPLE_FILES, "with-form.pdf"),
-            "application/pdf",
-        )
+        assert tesseract_parser.archive_path is not None
+        assert tesseract_parser.archive_path.exists()
+        assert tesseract_parser.archive_path.is_file()
 
         self.assertContainsStrings(
-            parser.get_text(),
-            ["Please enter your name in here:", "This is a PDF document with a form."],
+            tesseract_parser.get_text(),
+            ["This is a test document."],
         )
 
-    def test_image_simple(self):
-        parser = RasterisedDocumentParser(None)
+    @pytest.mark.django_db()
+    def test_image_simple_alpha(
+        self,
+        tmp_path: Path,
+        tesseract_parser: RasterisedDocumentParser,
+        png_with_alpha: Path,
+    ):
+        # Copy sample file to temp directory, as the parsing changes the file
+        # and this makes it modified to Git
+        dest_file = shutil.copy(png_with_alpha, tmp_path)
 
-        parser.parse(os.path.join(self.SAMPLE_FILES, "simple.png"), "image/png")
+        tesseract_parser.parse(dest_file, "image/png")
 
-        self.assertIsFile(parser.archive_path)
+        assert tesseract_parser.archive_path is not None
+        assert tesseract_parser.archive_path.exists()
+        assert tesseract_parser.archive_path.is_file()
 
-        self.assertContainsStrings(parser.get_text(), ["This is a test document."])
-
-    def test_image_simple_alpha(self):
-        parser = RasterisedDocumentParser(None)
-
-        with tempfile.TemporaryDirectory() as tempdir:
-            # Copy sample file to temp directory, as the parsing changes the file
-            # and this makes it modified to Git
-            sample_file = os.path.join(self.SAMPLE_FILES, "simple-alpha.png")
-            dest_file = os.path.join(tempdir, "simple-alpha.png")
-            shutil.copy(sample_file, dest_file)
-
-            parser.parse(dest_file, "image/png")
-
-            self.assertIsFile(parser.archive_path)
-
-            self.assertContainsStrings(parser.get_text(), ["This is a test document."])
-
-    def test_image_calc_a4_dpi(self):
-        parser = RasterisedDocumentParser(None)
-
-        dpi = parser.calculate_a4_dpi(
-            os.path.join(self.SAMPLE_FILES, "simple-no-dpi.png"),
+        self.assertContainsStrings(
+            tesseract_parser.get_text(),
+            ["This is a test document."],
         )
 
-        self.assertEqual(dpi, 62)
+    @pytest.mark.django_db()
+    def test_image_calc_a4_dpi(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        simple_no_dpi_png: Path,
+    ):
+        assert tesseract_parser.calculate_a4_dpi(simple_no_dpi_png) == 62
 
     @mock.patch("paperless_tesseract.parsers.RasterisedDocumentParser.calculate_a4_dpi")
-    def test_image_dpi_fail(self, m):
+    def test_image_dpi_fail(self, tesseract_parser: RasterisedDocumentParser, m):
         m.return_value = None
-        parser = RasterisedDocumentParser(None)
 
         def f():
-            parser.parse(
+            tesseract_parser.parse(
                 os.path.join(self.SAMPLE_FILES, "simple-no-dpi.png"),
                 "image/png",
             )
@@ -246,84 +294,86 @@ class TestParser:
         self.assertRaises(ParseError, f)
 
     @override_settings(OCR_IMAGE_DPI=72, MAX_IMAGE_PIXELS=0)
-    def test_image_no_dpi_default(self):
-        parser = RasterisedDocumentParser(None)
+    def test_image_no_dpi_default(self, tesseract_parser: RasterisedDocumentParser):
+        tesseract_parser.parse(
+            os.path.join(self.SAMPLE_FILES, "simple-no-dpi.png"),
+            "image/png",
+        )
 
-        parser.parse(os.path.join(self.SAMPLE_FILES, "simple-no-dpi.png"), "image/png")
-
-        self.assertIsFile(parser.archive_path)
+        self.assertIsFile(tesseract_parser.archive_path)
 
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["this is a test document."],
         )
 
-    def test_multi_page(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+    def test_multi_page(self, tesseract_parser: RasterisedDocumentParser):
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
             "application/pdf",
         )
-        self.assertIsFile(parser.archive_path)
+        self.assertIsFile(tesseract_parser.archive_path)
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
     @override_settings(OCR_PAGES=2, OCR_MODE="skip")
-    def test_multi_page_pages_skip(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+    def test_multi_page_pages_skip(self, tesseract_parser: RasterisedDocumentParser):
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
             "application/pdf",
         )
-        self.assertIsFile(parser.archive_path)
+        self.assertIsFile(tesseract_parser.archive_path)
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
     @override_settings(OCR_PAGES=2, OCR_MODE="redo")
-    def test_multi_page_pages_redo(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+    def test_multi_page_pages_redo(self, tesseract_parser: RasterisedDocumentParser):
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
             "application/pdf",
         )
-        self.assertIsFile(parser.archive_path)
+        self.assertIsFile(tesseract_parser.archive_path)
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
     @override_settings(OCR_PAGES=2, OCR_MODE="force")
-    def test_multi_page_pages_force(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+    def test_multi_page_pages_force(self, tesseract_parser: RasterisedDocumentParser):
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
             "application/pdf",
         )
-        self.assertIsFile(parser.archive_path)
+        self.assertIsFile(tesseract_parser.archive_path)
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
     @override_settings(OCR_MODE="skip")
-    def test_multi_page_analog_pages_skip(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+    def test_multi_page_analog_pages_skip(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+    ):
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
             "application/pdf",
         )
-        self.assertIsFile(parser.archive_path)
+        self.assertIsFile(tesseract_parser.archive_path)
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
     @override_settings(OCR_PAGES=2, OCR_MODE="redo")
-    def test_multi_page_analog_pages_redo(self):
+    def test_multi_page_analog_pages_redo(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+    ):
         """
         GIVEN:
             - File with text contained in images but no text layer
@@ -335,17 +385,23 @@ class TestParser:
             - Text of page 1 and 2 extracted
             - An archive file is created
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
             "application/pdf",
         )
-        self.assertIsFile(parser.archive_path)
-        self.assertContainsStrings(parser.get_text().lower(), ["page 1", "page 2"])
-        self.assertNotIn("page 3", parser.get_text().lower())
+        self.assertIsFile(tesseract_parser.archive_path)
+        self.assertContainsStrings(
+            tesseract_parser.get_text().lower(),
+            ["page 1", "page 2"],
+        )
+        assert "page 3" not in tesseract_parser.get_text().lower()
 
     @override_settings(OCR_PAGES=1, OCR_MODE="force")
-    def test_multi_page_analog_pages_force(self):
+    def test_multi_page_analog_pages_force(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+    ):
         """
         GIVEN:
             - File with text contained in images but no text layer
@@ -357,18 +413,18 @@ class TestParser:
             - Only text of page 1 is extracted
             - An archive file is created
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
             "application/pdf",
         )
-        self.assertIsFile(parser.archive_path)
-        self.assertContainsStrings(parser.get_text().lower(), ["page 1"])
-        self.assertNotIn("page 2", parser.get_text().lower())
-        self.assertNotIn("page 3", parser.get_text().lower())
+        self.assertIsFile(tesseract_parser.archive_path)
+        self.assertContainsStrings(tesseract_parser.get_text().lower(), ["page 1"])
+        assert "page 2" not in tesseract_parser.get_text().lower()
+        assert "page 3" not in tesseract_parser.get_text().lower()
 
     @override_settings(OCR_MODE="skip_noarchive")
-    def test_skip_noarchive_withtext(self):
+    def test_skip_noarchive_withtext(self, tesseract_parser: RasterisedDocumentParser):
         """
         GIVEN:
             - File with existing text layer
@@ -379,19 +435,19 @@ class TestParser:
             - Text from images is extracted
             - No archive file is created
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
             "application/pdf",
         )
-        self.assertIsNone(parser.archive_path)
+        assert tesseract_parser.archive_path is None
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
     @override_settings(OCR_MODE="skip_noarchive")
-    def test_skip_noarchive_notext(self):
+    def test_skip_noarchive_notext(self, tesseract_parser: RasterisedDocumentParser):
         """
         GIVEN:
             - File with text contained in images but no text layer
@@ -402,21 +458,24 @@ class TestParser:
             - Text from images is extracted
             - An archive file is created with the OCRd text
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
             "application/pdf",
         )
 
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
-        self.assertIsNotNone(parser.archive_path)
+        assert tesseract_parser.archive_path is not None
 
     @override_settings(OCR_SKIP_ARCHIVE_FILE="never")
-    def test_skip_archive_never_withtext(self):
+    def test_skip_archive_never_withtext(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+    ):
         """
         GIVEN:
             - File with existing text layer
@@ -427,19 +486,22 @@ class TestParser:
             - Text from text layer is extracted
             - Archive file is created
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
             "application/pdf",
         )
-        self.assertIsNotNone(parser.archive_path)
+        assert tesseract_parser.archive_path is not None
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
     @override_settings(OCR_SKIP_ARCHIVE_FILE="never")
-    def test_skip_archive_never_withimages(self):
+    def test_skip_archive_never_withimages(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+    ):
         """
         GIVEN:
             - File with text contained in images but no text layer
@@ -450,14 +512,14 @@ class TestParser:
             - Text from images is extracted
             - Archive file is created
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
             "application/pdf",
         )
-        self.assertIsNotNone(parser.archive_path)
+        assert tesseract_parser.archive_path is not None
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
@@ -473,14 +535,14 @@ class TestParser:
             - Text from text layer is extracted
             - No archive file is created
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
             "application/pdf",
         )
-        self.assertIsNone(parser.archive_path)
+        assert tesseract_parser.archive_path is None
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
@@ -496,14 +558,14 @@ class TestParser:
             - Text from images is extracted
             - Archive file is created
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
             "application/pdf",
         )
-        self.assertIsNotNone(parser.archive_path)
+        assert tesseract_parser.archive_path is not None
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
@@ -519,14 +581,14 @@ class TestParser:
             - Text from text layer is extracted
             - No archive file is created
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
             "application/pdf",
         )
-        self.assertIsNone(parser.archive_path)
+        assert tesseract_parser.archive_path is None
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
@@ -542,14 +604,14 @@ class TestParser:
             - Text from images is extracted
             - No archive file is created
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
             "application/pdf",
         )
-        self.assertIsNone(parser.archive_path)
+        assert tesseract_parser.archive_path is None
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
@@ -565,22 +627,22 @@ class TestParser:
             - Text from images is extracted
             - An archive file is created with the OCRd text and the original text
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-mixed.pdf"),
             "application/pdf",
         )
-        self.assertIsNotNone(parser.archive_path)
-        self.assertIsFile(parser.archive_path)
+        assert tesseract_parser.archive_path is not None
+        self.assertIsFile(tesseract_parser.archive_path)
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3", "page 4", "page 5", "page 6"],
         )
 
-        with open(os.path.join(parser.tempdir, "sidecar.txt")) as f:
+        with open(os.path.join(tesseract_parser.tempdir, "sidecar.txt")) as f:
             sidecar = f.read()
 
-        self.assertIn("[OCR skipped on page(s) 4-6]", sidecar)
+        assert "[OCR skipped on page(s) 4-6]" in sidecar
 
     @override_settings(OCR_MODE="redo")
     def test_single_page_mixed(self):
@@ -596,15 +658,15 @@ class TestParser:
             - Full content of the file is parsed (not just the image text)
             - An archive file is created with the OCRd text and the original text
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "single-page-mixed.pdf"),
             "application/pdf",
         )
-        self.assertIsNotNone(parser.archive_path)
-        self.assertIsFile(parser.archive_path)
+        assert tesseract_parser.archive_path is not None
+        self.assertIsFile(tesseract_parser.archive_path)
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             [
                 "this is some normal text, present on page 1 of the document.",
                 "this is some text, but in an image, also on page 1.",
@@ -612,13 +674,13 @@ class TestParser:
             ],
         )
 
-        with open(os.path.join(parser.tempdir, "sidecar.txt")) as f:
+        with open(os.path.join(tesseract_parser.tempdir, "sidecar.txt")) as f:
             sidecar = f.read().lower()
 
-        self.assertIn("this is some text, but in an image, also on page 1.", sidecar)
-        self.assertNotIn(
-            "this is some normal text, present on page 1 of the document.",
-            sidecar,
+        assert "this is some text, but in an image, also on page 1." in sidecar
+        assert (
+            "this is some normal text, present on page 1 of the document."
+            not in sidecar
         )
 
     @override_settings(OCR_MODE="skip_noarchive")
@@ -633,23 +695,25 @@ class TestParser:
             - Text from images is extracted
             - No archive file is created as original file contains text
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-mixed.pdf"),
             "application/pdf",
         )
-        self.assertIsNone(parser.archive_path)
+        assert tesseract_parser.archive_path is None
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 4", "page 5", "page 6"],
         )
 
     @override_settings(OCR_MODE="skip", OCR_ROTATE_PAGES=True)
     def test_rotate(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(os.path.join(self.SAMPLE_FILES, "rotated.pdf"), "application/pdf")
+        tesseract_parser.parse(
+            os.path.join(self.SAMPLE_FILES, "rotated.pdf"),
+            "application/pdf",
+        )
         self.assertContainsStrings(
-            parser.get_text(),
+            tesseract_parser.get_text(),
             [
                 "This is the text that appears on the first page. It’s a lot of text.",
                 "Even if the pages are rotated, OCRmyPDF still gets the job done.",
@@ -667,14 +731,14 @@ class TestParser:
         THEN:
             - Text from all pages extracted
         """
-        parser = RasterisedDocumentParser(None)
-        parser.parse(
+
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "multi-page-images.tiff"),
             "image/tiff",
         )
-        self.assertIsFile(parser.archive_path)
+        self.assertIsFile(tesseract_parser.archive_path)
         self.assertContainsStrings(
-            parser.get_text().lower(),
+            tesseract_parser.get_text().lower(),
             ["page 1", "page 2", "page 3"],
         )
 
@@ -688,17 +752,17 @@ class TestParser:
         THEN:
             - Text from all pages extracted
         """
-        parser = RasterisedDocumentParser(None)
+
         sample_file = os.path.join(self.SAMPLE_FILES, "multi-page-images-alpha.tiff")
         with tempfile.NamedTemporaryFile() as tmp_file:
             shutil.copy(sample_file, tmp_file.name)
-            parser.parse(
+            tesseract_parser.parse(
                 tmp_file.name,
                 "image/tiff",
             )
-            self.assertIsFile(parser.archive_path)
+            self.assertIsFile(tesseract_parser.archive_path)
             self.assertContainsStrings(
-                parser.get_text().lower(),
+                tesseract_parser.get_text().lower(),
                 ["page 1", "page 2", "page 3"],
             )
 
@@ -713,26 +777,25 @@ class TestParser:
         THEN:
             - Text from all pages extracted
         """
-        parser = RasterisedDocumentParser(None)
+
         sample_file = os.path.join(
             self.SAMPLE_FILES,
             "multi-page-images-alpha-rgb.tiff",
         )
         with tempfile.NamedTemporaryFile() as tmp_file:
             shutil.copy(sample_file, tmp_file.name)
-            parser.parse(
+            tesseract_parser.parse(
                 tmp_file.name,
                 "image/tiff",
             )
-            self.assertIsFile(parser.archive_path)
+            self.assertIsFile(tesseract_parser.archive_path)
             self.assertContainsStrings(
-                parser.get_text().lower(),
+                tesseract_parser.get_text().lower(),
                 ["page 1", "page 2", "page 3"],
             )
 
     def test_ocrmypdf_parameters(self):
-        parser = RasterisedDocumentParser(None)
-        params = parser.construct_ocrmypdf_parameters(
+        params = tesseract_parser.construct_ocrmypdf_parameters(
             input_file="input.pdf",
             output_file="output.pdf",
             sidecar_file="sidecar.txt",
@@ -740,59 +803,50 @@ class TestParser:
             safe_fallback=False,
         )
 
-        self.assertEqual(params["input_file"], "input.pdf")
-        self.assertEqual(params["output_file"], "output.pdf")
-        self.assertEqual(params["sidecar"], "sidecar.txt")
+        assert params["input_file"] == "input.pdf"
+        assert params["output_file"] == "output.pdf"
+        assert params["sidecar"] == "sidecar.txt"
 
         with override_settings(OCR_CLEAN="none"):
-            parser = RasterisedDocumentParser(None)
-            params = parser.construct_ocrmypdf_parameters("", "", "", "")
-            self.assertNotIn("clean", params)
-            self.assertNotIn("clean_final", params)
+            params = tesseract_parser.construct_ocrmypdf_parameters("", "", "", "")
+            assert "clean" not in params
+            assert "clean_final" not in params
 
         with override_settings(OCR_CLEAN="clean"):
-            parser = RasterisedDocumentParser(None)
-            params = parser.construct_ocrmypdf_parameters("", "", "", "")
-            self.assertTrue(params["clean"])
-            self.assertNotIn("clean_final", params)
+            params = tesseract_parser.construct_ocrmypdf_parameters("", "", "", "")
+            assert params["clean"]
+            assert "clean_final" not in params
 
         with override_settings(OCR_CLEAN="clean-final", OCR_MODE="skip"):
-            parser = RasterisedDocumentParser(None)
-            params = parser.construct_ocrmypdf_parameters("", "", "", "")
-            self.assertTrue(params["clean_final"])
-            self.assertNotIn("clean", params)
+            params = tesseract_parser.construct_ocrmypdf_parameters("", "", "", "")
+            assert params["clean_final"]
+            assert "clean" not in params
 
         with override_settings(OCR_CLEAN="clean-final", OCR_MODE="redo"):
-            parser = RasterisedDocumentParser(None)
-            params = parser.construct_ocrmypdf_parameters("", "", "", "")
-            self.assertTrue(params["clean"])
-            self.assertNotIn("clean_final", params)
+            params = tesseract_parser.construct_ocrmypdf_parameters("", "", "", "")
+            assert params["clean"]
+            assert "clean_final" not in params
 
         with override_settings(OCR_DESKEW=True, OCR_MODE="skip"):
-            parser = RasterisedDocumentParser(None)
-            params = parser.construct_ocrmypdf_parameters("", "", "", "")
-            self.assertTrue(params["deskew"])
+            params = tesseract_parser.construct_ocrmypdf_parameters("", "", "", "")
+            assert params["deskew"]
 
         with override_settings(OCR_DESKEW=True, OCR_MODE="redo"):
-            parser = RasterisedDocumentParser(None)
-            params = parser.construct_ocrmypdf_parameters("", "", "", "")
-            self.assertNotIn("deskew", params)
+            params = tesseract_parser.construct_ocrmypdf_parameters("", "", "", "")
+            assert "deskew" not in params
 
         with override_settings(OCR_DESKEW=False, OCR_MODE="skip"):
-            parser = RasterisedDocumentParser(None)
-            params = parser.construct_ocrmypdf_parameters("", "", "", "")
-            self.assertNotIn("deskew", params)
+            params = tesseract_parser.construct_ocrmypdf_parameters("", "", "", "")
+            assert "deskew" not in params
 
         with override_settings(OCR_MAX_IMAGE_PIXELS=1_000_001.0):
-            parser = RasterisedDocumentParser(None)
-            params = parser.construct_ocrmypdf_parameters("", "", "", "")
-            self.assertIn("max_image_mpixels", params)
+            params = tesseract_parser.construct_ocrmypdf_parameters("", "", "", "")
+            assert "max_image_mpixels" in params
             self.assertAlmostEqual(params["max_image_mpixels"], 1, places=4)
 
         with override_settings(OCR_MAX_IMAGE_PIXELS=-1_000_001.0):
-            parser = RasterisedDocumentParser(None)
-            params = parser.construct_ocrmypdf_parameters("", "", "", "")
-            self.assertNotIn("max_image_mpixels", params)
+            params = tesseract_parser.construct_ocrmypdf_parameters("", "", "", "")
+            assert "max_image_mpixels" not in params
 
     def test_rtl_language_detection(self):
         """
@@ -803,25 +857,23 @@ class TestParser:
         THEN:
             - Text from the document is extracted
         """
-        parser = RasterisedDocumentParser(None)
 
-        parser.parse(
+        tesseract_parser.parse(
             os.path.join(self.SAMPLE_FILES, "rtl-test.pdf"),
             "application/pdf",
         )
 
         # Copied from the PDF to here.  Don't even look at it
-        self.assertIn("ةﯾﻠﺧﺎدﻻ ةرازو", parser.get_text())
+        assert "ةﯾﻠﺧﺎدﻻ ةرازو" in tesseract_parser.get_text()
 
     @mock.patch("ocrmypdf.ocr")
     def test_gs_rendering_error(self, m):
         m.side_effect = SubprocessOutputError("Ghostscript PDF/A rendering failed")
-        parser = RasterisedDocumentParser(None)
 
         self.assertRaises(
             ParseError,
-            parser.parse,
-            os.path.join(self.SAMPLE_FILES, "simple-digital.pdf"),
+            tesseract_parser.parse,
+            simple_digital_pdf,
             "application/pdf",
         )
 
@@ -830,38 +882,48 @@ class TestParserFileTypes(DirectoriesMixin, FileSystemAssertsMixin, TestCase):
     SAMPLE_FILES = os.path.join(os.path.dirname(__file__), "samples")
 
     def test_bmp(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(os.path.join(self.SAMPLE_FILES, "simple.bmp"), "image/bmp")
-        self.assertIsFile(parser.archive_path)
-        self.assertIn("this is a test document", parser.get_text().lower())
+        tesseract_parser.parse(
+            os.path.join(self.SAMPLE_FILES, "simple.bmp"),
+            "image/bmp",
+        )
+        self.assertIsFile(tesseract_parser.archive_path)
+        assert "this is a test document" in tesseract_parser.get_text().lower()
 
     def test_jpg(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(os.path.join(self.SAMPLE_FILES, "simple.jpg"), "image/jpeg")
-        self.assertIsFile(parser.archive_path)
-        self.assertIn("this is a test document", parser.get_text().lower())
+        tesseract_parser.parse(
+            os.path.join(self.SAMPLE_FILES, "simple.jpg"),
+            "image/jpeg",
+        )
+        self.assertIsFile(tesseract_parser.archive_path)
+        assert "this is a test document" in tesseract_parser.get_text().lower()
 
     @override_settings(OCR_IMAGE_DPI=200)
     def test_gif(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(os.path.join(self.SAMPLE_FILES, "simple.gif"), "image/gif")
-        self.assertIsFile(parser.archive_path)
-        self.assertIn("this is a test document", parser.get_text().lower())
+        tesseract_parser.parse(
+            os.path.join(self.SAMPLE_FILES, "simple.gif"),
+            "image/gif",
+        )
+        self.assertIsFile(tesseract_parser.archive_path)
+        assert "this is a test document" in tesseract_parser.get_text().lower()
 
     def test_tiff(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(os.path.join(self.SAMPLE_FILES, "simple.tif"), "image/tiff")
-        self.assertIsFile(parser.archive_path)
-        self.assertIn("this is a test document", parser.get_text().lower())
+        tesseract_parser.parse(
+            os.path.join(self.SAMPLE_FILES, "simple.tif"),
+            "image/tiff",
+        )
+        self.assertIsFile(tesseract_parser.archive_path)
+        assert "this is a test document" in tesseract_parser.get_text().lower()
 
     @override_settings(OCR_IMAGE_DPI=72)
     def test_webp(self):
-        parser = RasterisedDocumentParser(None)
-        parser.parse(os.path.join(self.SAMPLE_FILES, "document.webp"), "image/webp")
-        self.assertIsFile(parser.archive_path)
+        tesseract_parser.parse(
+            os.path.join(self.SAMPLE_FILES, "document.webp"),
+            "image/webp",
+        )
+        self.assertIsFile(tesseract_parser.archive_path)
         # Older tesseracts consistently mangle the space between "a webp",
         # tesseract 5.3.0 seems to do a better job, so we're accepting both
-        self.assertRegex(
-            parser.get_text().lower(),
-            r"this is a ?webp document, created 11/14/2022.",
+        assert re.search(
+            "this is a ?webp document, created 11/14/2022.",
+            tesseract_parser.get_text().lower(),
         )

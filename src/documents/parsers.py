@@ -382,7 +382,7 @@ class DocumentParser(LoggingMixin):
         """
         raise NotImplementedError
 
-    def get_text(self):
+    def get_text(self) -> Optional[str]:
         return self.text
 
     def get_date(self) -> Optional[datetime.datetime]:
