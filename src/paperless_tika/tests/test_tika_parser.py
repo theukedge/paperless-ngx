@@ -1,30 +1,30 @@
 import datetime
-import os
 import zoneinfo
+from http import HTTPStatus
 from pathlib import Path
 
-from django.test import TestCase
+import pytest
 from django.test import override_settings
 from httpx import codes
 from httpx._multipart import DataField
-from rest_framework import status
+from pytest_httpx import HTTPXMock
 
 from documents.parsers import ParseError
 from paperless_tika.parsers import TikaDocumentParser
-from paperless_tika.tests.utils import HttpxMockMixin
 
 
-class TestTikaParser(HttpxMockMixin, TestCase):
-    def setUp(self) -> None:
-        self.parser = TikaDocumentParser(logging_group=None)
-
-    def tearDown(self) -> None:
-        self.parser.cleanup()
-
-    @override_settings(TIME_ZONE="America/Chicago")
-    def test_parse(self):
+@pytest.mark.django_db()
+class TestTikaParser:
+    def test_parse(
+        self,
+        httpx_mock: HTTPXMock,
+        settings,
+        tika_parser: TikaDocumentParser,
+        sample_odt_file: Path,
+    ):
+        settings.TIME_ZONE = "America/Chicago"
         # Pretend parse response
-        self.httpx_mock.add_response(
+        httpx_mock.add_response(
             json={
                 "Content-Type": "application/vnd.oasis.opendocument.text",
                 "X-TIKA:Parsed-By": [],
@@ -33,30 +33,29 @@ class TestTikaParser(HttpxMockMixin, TestCase):
             },
         )
         # Pretend convert to PDF response
-        self.httpx_mock.add_response(content=b"PDF document")
+        httpx_mock.add_response(content=b"PDF document")
 
-        file = Path(os.path.join(self.parser.tempdir, "input.odt"))
-        file.touch()
+        tika_parser.parse(sample_odt_file, "application/vnd.oasis.opendocument.text")
 
-        self.parser.parse(file, "application/vnd.oasis.opendocument.text")
+        assert tika_parser.text == "the content"
+        assert tika_parser.archive_path is not None
+        with open(tika_parser.archive_path, "rb") as f:
+            assert f.read() == b"PDF document"
 
-        self.assertEqual(self.parser.text, "the content")
-        self.assertIsNotNone(self.parser.archive_path)
-        with open(self.parser.archive_path, "rb") as f:
-            self.assertEqual(f.read(), b"PDF document")
-
-        self.assertEqual(
-            self.parser.date,
-            datetime.datetime(
-                2020,
-                11,
-                21,
-                tzinfo=zoneinfo.ZoneInfo("America/Chicago"),
-            ),
+        assert tika_parser.date == datetime.datetime(
+            2020,
+            11,
+            21,
+            tzinfo=zoneinfo.ZoneInfo("America/Chicago"),
         )
 
-    def test_metadata(self):
-        self.httpx_mock.add_response(
+    def test_metadata(
+        self,
+        httpx_mock: HTTPXMock,
+        tika_parser: TikaDocumentParser,
+        sample_odt_file: Path,
+    ):
+        httpx_mock.add_response(
             json={
                 "Content-Type": "application/vnd.oasis.opendocument.text",
                 "X-TIKA:Parsed-By": [],
@@ -65,18 +64,20 @@ class TestTikaParser(HttpxMockMixin, TestCase):
             },
         )
 
-        file = Path(os.path.join(self.parser.tempdir, "input.odt"))
-        file.touch()
-
-        metadata = self.parser.extract_metadata(
-            file,
+        metadata = tika_parser.extract_metadata(
+            sample_odt_file,
             "application/vnd.oasis.opendocument.text",
         )
 
-        self.assertTrue("dcterms:created" in [m["key"] for m in metadata])
-        self.assertTrue("Some-key" in [m["key"] for m in metadata])
+        assert "dcterms:created" in [m["key"] for m in metadata]
+        assert "Some-key" in [m["key"] for m in metadata]
 
-    def test_convert_failure(self):
+    def test_convert_failure(
+        self,
+        httpx_mock: HTTPXMock,
+        tika_parser: TikaDocumentParser,
+        sample_odt_file: Path,
+    ):
         """
         GIVEN:
             - Document needs to be converted to PDF
@@ -86,15 +87,17 @@ class TestTikaParser(HttpxMockMixin, TestCase):
             - Parse error is raised
         """
         # Pretend convert to PDF response
-        self.httpx_mock.add_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        httpx_mock.add_response(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
-        file = Path(os.path.join(self.parser.tempdir, "input.odt"))
-        file.touch()
+        with pytest.raises(ParseError):
+            tika_parser.convert_to_pdf(sample_odt_file, None)
 
-        with self.assertRaises(ParseError):
-            self.parser.convert_to_pdf(file, None)
-
-    def test_request_pdf_a_format(self):
+    def test_request_pdf_a_format(
+        self,
+        httpx_mock: HTTPXMock,
+        tika_parser: TikaDocumentParser,
+        sample_odt_file: Path,
+    ):
         """
         GIVEN:
             - Document needs to be converted to PDF
@@ -103,8 +106,6 @@ class TestTikaParser(HttpxMockMixin, TestCase):
         THEN:
             - Request to Gotenberg contains the expected PDF/A format string
         """
-        file = Path(os.path.join(self.parser.tempdir, "input.odt"))
-        file.touch()
 
         for setting, expected_key in [
             ("pdfa", "PDF/A-2b"),
@@ -113,20 +114,20 @@ class TestTikaParser(HttpxMockMixin, TestCase):
             ("pdfa-3", "PDF/A-3b"),
         ]:
             with override_settings(OCR_OUTPUT_TYPE=setting):
-                self.httpx_mock.add_response(
+                httpx_mock.add_response(
                     status_code=codes.OK,
                     content=b"PDF document",
                     method="POST",
                 )
 
-                self.parser.convert_to_pdf(file, None)
+                tika_parser.convert_to_pdf(sample_odt_file, None)
 
-                request = self.httpx_mock.get_request()
+                request = httpx_mock.get_request()
                 found = False
                 for field in request.stream.fields:
                     if isinstance(field, DataField) and field.name == "pdfFormat":
-                        self.assertEqual(field.value, expected_key)
+                        assert field.value == expected_key
                         found = True
-                self.assertTrue(found)
+                assert found, "pdfFormat was not found"
 
-                self.httpx_mock.reset(assert_all_responses_were_requested=False)
+                httpx_mock.reset(assert_all_responses_were_requested=False)
