@@ -7,6 +7,7 @@ import pytest
 from django.test import override_settings
 from httpx import codes
 from httpx._multipart import DataField
+from pytest_django.fixtures import SettingsWrapper
 from pytest_httpx import HTTPXMock
 
 from documents.parsers import ParseError
@@ -18,7 +19,7 @@ class TestTikaParser:
     def test_parse(
         self,
         httpx_mock: HTTPXMock,
-        settings,
+        settings: SettingsWrapper,
         tika_parser: TikaDocumentParser,
         sample_odt_file: Path,
     ):
