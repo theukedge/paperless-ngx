@@ -287,7 +287,7 @@ class TestParser:
 
         def f():
             tesseract_parser.parse(
-                os.path.join(self.SAMPLE_FILES, "simple-no-dpi.png"),
+                simple_no_dpi_png,
                 "image/png",
             )
 
@@ -296,7 +296,7 @@ class TestParser:
     @override_settings(OCR_IMAGE_DPI=72, MAX_IMAGE_PIXELS=0)
     def test_image_no_dpi_default(self, tesseract_parser: RasterisedDocumentParser):
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "simple-no-dpi.png"),
+            simple_no_dpi_png,
             "image/png",
         )
 
@@ -309,7 +309,7 @@ class TestParser:
 
     def test_multi_page(self, tesseract_parser: RasterisedDocumentParser):
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
+            multi_page_digital_pdf,
             "application/pdf",
         )
         self.assertIsFile(tesseract_parser.archive_path)
@@ -321,7 +321,7 @@ class TestParser:
     @override_settings(OCR_PAGES=2, OCR_MODE="skip")
     def test_multi_page_pages_skip(self, tesseract_parser: RasterisedDocumentParser):
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
+            multi_page_digital_pdf,
             "application/pdf",
         )
         self.assertIsFile(tesseract_parser.archive_path)
@@ -333,7 +333,7 @@ class TestParser:
     @override_settings(OCR_PAGES=2, OCR_MODE="redo")
     def test_multi_page_pages_redo(self, tesseract_parser: RasterisedDocumentParser):
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
+            multi_page_digital_pdf,
             "application/pdf",
         )
         self.assertIsFile(tesseract_parser.archive_path)
@@ -345,7 +345,7 @@ class TestParser:
     @override_settings(OCR_PAGES=2, OCR_MODE="force")
     def test_multi_page_pages_force(self, tesseract_parser: RasterisedDocumentParser):
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
+            multi_page_digital_pdf,
             "application/pdf",
         )
         self.assertIsFile(tesseract_parser.archive_path)
@@ -360,7 +360,7 @@ class TestParser:
         tesseract_parser: RasterisedDocumentParser,
     ):
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
+            multi_page_images_pdf,
             "application/pdf",
         )
         self.assertIsFile(tesseract_parser.archive_path)
@@ -387,7 +387,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
+            multi_page_images_pdf,
             "application/pdf",
         )
         self.assertIsFile(tesseract_parser.archive_path)
@@ -415,7 +415,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
+            multi_page_images_pdf,
             "application/pdf",
         )
         self.assertIsFile(tesseract_parser.archive_path)
@@ -437,7 +437,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
+            multi_page_digital_pdf,
             "application/pdf",
         )
         assert tesseract_parser.archive_path is None
@@ -460,7 +460,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
+            multi_page_images_pdf,
             "application/pdf",
         )
 
@@ -488,7 +488,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
+            multi_page_digital_pdf,
             "application/pdf",
         )
         assert tesseract_parser.archive_path is not None
@@ -514,7 +514,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
+            multi_page_images_pdf,
             "application/pdf",
         )
         assert tesseract_parser.archive_path is not None
@@ -537,7 +537,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
+            multi_page_digital_pdf,
             "application/pdf",
         )
         assert tesseract_parser.archive_path is None
@@ -560,7 +560,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
+            multi_page_images_pdf,
             "application/pdf",
         )
         assert tesseract_parser.archive_path is not None
@@ -583,7 +583,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-digital.pdf"),
+            multi_page_digital_pdf,
             "application/pdf",
         )
         assert tesseract_parser.archive_path is None
@@ -606,7 +606,7 @@ class TestParser:
         """
 
         tesseract_parser.parse(
-            os.path.join(self.SAMPLE_FILES, "multi-page-images.pdf"),
+            multi_page_images_pdf,
             "application/pdf",
         )
         assert tesseract_parser.archive_path is None

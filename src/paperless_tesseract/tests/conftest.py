@@ -36,7 +36,7 @@ def multi_page_digital_pdf(sample_dir: Path) -> Path:
 
 
 @pytest.fixture(scope="session")
-def multi_page_imagesl_pdf(sample_dir: Path) -> Path:
+def multi_page_images_pdf(sample_dir: Path) -> Path:
     return sample_dir / "multi-page-images.pdf"
 
 
