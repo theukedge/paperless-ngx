@@ -131,8 +131,8 @@ def get_parser_class_for_mime_type(mime_type: str) -> Optional[type["DocumentPar
 
 
 def run_convert(
-    input_file,
-    output_file,
+    input_file: str,
+    output_file: Path,
     density=None,
     scale=None,
     alpha=None,
@@ -161,7 +161,7 @@ def run_convert(
     args += ["-depth", str(depth)] if depth else []
     args += ["-auto-orient"] if auto_orient else []
     args += ["-define", "pdf:use-cropbox=true"] if use_cropbox else []
-    args += [input_file, output_file]
+    args += [input_file, str(output_file)]
 
     logger.debug("Execute: " + " ".join(args), extra={"group": logging_group})
 
@@ -180,8 +180,12 @@ def get_default_thumbnail() -> Path:
     return (Path(__file__).parent / "resources" / "document.webp").resolve()
 
 
-def make_thumbnail_from_pdf_gs_fallback(in_path, temp_dir, logging_group=None) -> str:
-    out_path = os.path.join(temp_dir, "convert_gs.webp")
+def make_thumbnail_from_pdf_gs_fallback(
+    in_path: Path,
+    temp_dir: Path,
+    logging_group=None,
+) -> Path:
+    out_path = temp_dir / "convert_gs.webp"
 
     # if convert fails, fall back to extracting
     # the first PDF page as a PNG using Ghostscript
@@ -191,7 +195,7 @@ def make_thumbnail_from_pdf_gs_fallback(in_path, temp_dir, logging_group=None) -
         extra={"group": logging_group},
     )
     # Ghostscript doesn't handle WebP outputs
-    gs_out_path = os.path.join(temp_dir, "gs_out.png")
+    gs_out_path = temp_dir / "gs_out.png"
     cmd = [settings.GS_BINARY, "-q", "-sDEVICE=pngalpha", "-o", gs_out_path, in_path]
 
     try:
@@ -219,16 +223,16 @@ def make_thumbnail_from_pdf_gs_fallback(in_path, temp_dir, logging_group=None) -
         # The caller might expect a generated thumbnail that can be moved,
         # so we need to copy it before it gets moved.
         # https://github.com/paperless-ngx/paperless-ngx/issues/3631
-        default_thumbnail_path = os.path.join(temp_dir, "document.webp")
+        default_thumbnail_path = temp_dir / "document.webp"
         copy_file_with_basic_stats(get_default_thumbnail(), default_thumbnail_path)
         return default_thumbnail_path
 
 
-def make_thumbnail_from_pdf(in_path, temp_dir, logging_group=None) -> str:
+def make_thumbnail_from_pdf(in_path: Path, temp_dir: Path, logging_group=None) -> Path:
     """
     The thumbnail of a PDF is just a 500px wide image of the first page.
     """
-    out_path = os.path.join(temp_dir, "convert.webp")
+    out_path = temp_dir / "convert.webp"
 
     # Run convert to get a decent thumbnail
     try:

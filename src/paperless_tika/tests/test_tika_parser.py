@@ -4,7 +4,6 @@ from http import HTTPStatus
 from pathlib import Path
 
 import pytest
-from django.test import override_settings
 from httpx import codes
 from httpx._multipart import DataField
 from pytest_django.fixtures import SettingsWrapper
@@ -93,9 +92,21 @@ class TestTikaParser:
         with pytest.raises(ParseError):
             tika_parser.convert_to_pdf(sample_odt_file, None)
 
+    @pytest.mark.parametrize(
+        ("setting_value", "expected_form_value"),
+        [
+            ("pdfa", "PDF/A-2b"),
+            ("pdfa-2", "PDF/A-2b"),
+            ("pdfa-1", "PDF/A-1a"),
+            ("pdfa-3", "PDF/A-3b"),
+        ],
+    )
     def test_request_pdf_a_format(
         self,
+        setting_value: str,
+        expected_form_value: str,
         httpx_mock: HTTPXMock,
+        settings: SettingsWrapper,
         tika_parser: TikaDocumentParser,
         sample_odt_file: Path,
     ):
@@ -107,28 +118,21 @@ class TestTikaParser:
         THEN:
             - Request to Gotenberg contains the expected PDF/A format string
         """
+        settings.OCR_OUTPUT_TYPE = setting_value
+        httpx_mock.add_response(
+            status_code=codes.OK,
+            content=b"PDF document",
+            method="POST",
+        )
 
-        for setting, expected_key in [
-            ("pdfa", "PDF/A-2b"),
-            ("pdfa-2", "PDF/A-2b"),
-            ("pdfa-1", "PDF/A-1a"),
-            ("pdfa-3", "PDF/A-3b"),
-        ]:
-            with override_settings(OCR_OUTPUT_TYPE=setting):
-                httpx_mock.add_response(
-                    status_code=codes.OK,
-                    content=b"PDF document",
-                    method="POST",
-                )
+        tika_parser.convert_to_pdf(sample_odt_file, None)
 
-                tika_parser.convert_to_pdf(sample_odt_file, None)
+        request = httpx_mock.get_request()
+        found = False
+        for field in request.stream.fields:
+            if isinstance(field, DataField) and field.name == "pdfFormat":
+                assert field.value == expected_form_value
+                found = True
+        assert found, "pdfFormat was not found"
 
-                request = httpx_mock.get_request()
-                found = False
-                for field in request.stream.fields:
-                    if isinstance(field, DataField) and field.name == "pdfFormat":
-                        assert field.value == expected_key
-                        found = True
-                assert found, "pdfFormat was not found"
-
-                httpx_mock.reset(assert_all_responses_were_requested=False)
+        httpx_mock.reset(assert_all_responses_were_requested=False)

@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 from unittest import mock
 
+import pytest
 from django.test import TestCase
 from django.test import override_settings
 from ocrmypdf import SubprocessOutputError
@@ -17,7 +18,7 @@ from paperless_tesseract.parsers import RasterisedDocumentParser
 from paperless_tesseract.parsers import post_process_text
 
 
-class TestParser(DirectoriesMixin, FileSystemAssertsMixin, TestCase):
+class TestParser:
     SAMPLE_FILES = Path(__file__).resolve().parent / "samples"
 
     def assertContainsStrings(self, content, strings):
@@ -27,43 +28,45 @@ class TestParser(DirectoriesMixin, FileSystemAssertsMixin, TestCase):
             if s in content:
                 indices.append(content.index(s))
             else:
-                self.fail(f"'{s}' is not in '{content}'")
-        self.assertListEqual(indices, sorted(indices))
+                pytest.fail(f"'{s}' is not in '{content}'")
+        assert indices == sorted(indices)
 
-    def test_post_process_text(self):
-        text_cases = [
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
             ("simple     string", "simple string"),
             ("simple    newline\n   testing string", "simple newline\ntesting string"),
             (
                 "utf-8   строка с пробелами в конце  ",
                 "utf-8 строка с пробелами в конце",
             ),
-        ]
+        ],
+    )
+    def test_post_process_text(self, source: str, expected: str):
+        assert expected == post_process_text(source)
 
-        for source, result in text_cases:
-            actual_result = post_process_text(source)
-            self.assertEqual(
-                result,
-                actual_result,
-                f"strip_exceess_whitespace({source}) != '{result}', but '{actual_result}'",
-            )
+    @pytest.mark.django_db()
+    def test_get_text_from_pdf(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        simple_digital_pdf: Path,
+    ):
+        text = tesseract_parser.extract_text(None, simple_digital_pdf)
 
-    def test_get_text_from_pdf(self):
-        parser = RasterisedDocumentParser(uuid.uuid4())
-        text = parser.extract_text(
-            None,
-            self.SAMPLE_FILES / "simple-digital.pdf",
-        )
+        assert text is not None
 
         self.assertContainsStrings(text.strip(), ["This is a test document."])
 
-    def test_thumbnail(self):
-        parser = RasterisedDocumentParser(uuid.uuid4())
-        thumb = parser.get_thumbnail(
-            os.path.join(self.SAMPLE_FILES, "simple-digital.pdf"),
-            "application/pdf",
-        )
-        self.assertIsFile(thumb)
+    @pytest.mark.django_db()
+    def test_thumbnail(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        simple_digital_pdf: Path,
+    ):
+        thumb = tesseract_parser.get_thumbnail(simple_digital_pdf, "application/pdf")
+
+        assert thumb.exists()
+        assert thumb.is_file()
 
     @mock.patch("documents.parsers.run_convert")
     def test_thumbnail_fallback(self, m):
