@@ -2,13 +2,62 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+from pytest_django.fixtures import SettingsWrapper
+from pytest_mock import MockerFixture
 
+from paperless.config import OcrConfig
 from paperless_tesseract.parsers import RasterisedDocumentParser
 
 
 @pytest.fixture()
 def tesseract_parser() -> Generator[RasterisedDocumentParser, None, None]:
     try:
+        parser = RasterisedDocumentParser(logging_group=None)
+        yield parser
+    finally:
+        if "parser" in locals():
+            parser.cleanup()
+
+
+@pytest.fixture()
+def dummy_ocr_settings(mocker: MockerFixture, settings: SettingsWrapper) -> OcrConfig:
+    """
+    Prevents access to the database, preferring the settings values instead
+    """
+
+    def inner():
+        mocker.patch("paperless.config.OcrConfig.__post_init__")
+        obj = OcrConfig()
+        obj.output_type = settings.OCR_OUTPUT_TYPE
+        obj.pages = settings.OCR_PAGES
+        obj.language = settings.OCR_LANGUAGE
+        obj.mode = settings.OCR_MODE
+        obj.skip_archive_file = settings.OCR_SKIP_ARCHIVE_FILE
+        obj.image_dpi = settings.OCR_IMAGE_DPI
+        obj.clean = settings.OCR_CLEAN
+        obj.deskew = settings.OCR_DESKEW
+        obj.rotate = settings.OCR_ROTATE_PAGES
+        obj.rotate_threshold = settings.OCR_ROTATE_PAGES_THRESHOLD
+        obj.max_image_pixel = settings.OCR_MAX_IMAGE_PIXELS
+        obj.color_conversion_strategy = settings.OCR_COLOR_CONVERSION_STRATEGY
+        obj.user_args = None
+        return obj
+
+    return inner
+
+
+@pytest.fixture()
+def tesseract_parser_no_db(
+    mocker: MockerFixture,
+    dummy_ocr_settings: OcrConfig,
+) -> Generator[RasterisedDocumentParser, None, None]:
+    """
+    A Tesseract based parser, except it does not require the database
+    """
+    try:
+        mocker.patch(
+            "paperless_tesseract.parsers.RasterisedDocumentParser.get_settings",
+        ).side_effect = dummy_ocr_settings
         parser = RasterisedDocumentParser(logging_group=None)
         yield parser
     finally:
@@ -44,6 +93,26 @@ def multi_page_images_pdf(sample_dir: Path) -> Path:
 @pytest.fixture(scope="session")
 def multi_page_mixed_pdf(sample_dir: Path) -> Path:
     return sample_dir / "multi-page-mixed.pdf"
+
+
+@pytest.fixture(scope="session")
+def rotated_pdf(sample_dir: Path) -> Path:
+    return sample_dir / "rotated.pdf"
+
+
+@pytest.fixture(scope="session")
+def multi_page_tiff(sample_dir: Path) -> Path:
+    return sample_dir / "multi-page-images.tiff"
+
+
+@pytest.fixture(scope="session")
+def multi_page_alpha_tiff(sample_dir: Path) -> Path:
+    return sample_dir / "multi-page-images-alpha.tiff"
+
+
+@pytest.fixture(scope="session")
+def multi_page_srgb_tiff(sample_dir: Path) -> Path:
+    return sample_dir / "multi-page-images-alpha-rgb.tiff"
 
 
 @pytest.fixture(scope="session")
