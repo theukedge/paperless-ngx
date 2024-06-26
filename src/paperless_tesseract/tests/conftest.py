@@ -27,6 +27,7 @@ def dummy_ocr_settings(mocker: MockerFixture, settings: SettingsWrapper) -> OcrC
 
     def inner():
         mocker.patch("paperless.config.OcrConfig.__post_init__")
+        print("inside inner")
         obj = OcrConfig()
         obj.output_type = settings.OCR_OUTPUT_TYPE
         obj.pages = settings.OCR_PAGES
@@ -47,22 +48,18 @@ def dummy_ocr_settings(mocker: MockerFixture, settings: SettingsWrapper) -> OcrC
 
 
 @pytest.fixture()
-def tesseract_parser_no_db(
+def tesseract_parser_no_db_factory(
     mocker: MockerFixture,
     dummy_ocr_settings: OcrConfig,
-) -> Generator[RasterisedDocumentParser, None, None]:
+) -> type[RasterisedDocumentParser]:
     """
-    A Tesseract based parser, except it does not require the database
+    A Tesseract based parser, except it does not require the database.  It is patched to
+    always use settings.
     """
-    try:
-        mocker.patch(
-            "paperless_tesseract.parsers.RasterisedDocumentParser.get_settings",
-        ).side_effect = dummy_ocr_settings
-        parser = RasterisedDocumentParser(logging_group=None)
-        yield parser
-    finally:
-        if "parser" in locals():
-            parser.cleanup()
+    mocker.patch(
+        "paperless_tesseract.parsers.RasterisedDocumentParser.get_settings",
+    ).side_effect = dummy_ocr_settings
+    return RasterisedDocumentParser
 
 
 @pytest.fixture(scope="session")

@@ -11,6 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from re import Match
 from typing import Optional
+from uuid import uuid4
 
 from django.conf import settings
 from django.utils import timezone
@@ -330,10 +331,10 @@ class DocumentParser(LoggingMixin):
 
     logging_name = "paperless.parsing"
 
-    def __init__(self, logging_group, progress_callback=None):
+    def __init__(self, logging_group=None, progress_callback=None):
         super().__init__()
         self.renew_logging_group()
-        self.logging_group = logging_group
+        self.logging_group = logging_group or uuid4()
         self.settings = self.get_settings()
         settings.SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
         self.tempdir = Path(
