@@ -131,7 +131,7 @@ def get_parser_class_for_mime_type(mime_type: str) -> Optional[type["DocumentPar
 
 
 def run_convert(
-    input_file: str,
+    input_file: str | Path,
     output_file: Path,
     density=None,
     scale=None,
@@ -161,7 +161,7 @@ def run_convert(
     args += ["-depth", str(depth)] if depth else []
     args += ["-auto-orient"] if auto_orient else []
     args += ["-define", "pdf:use-cropbox=true"] if use_cropbox else []
-    args += [input_file, str(output_file)]
+    args += [str(input_file), str(output_file)]
 
     logger.debug("Execute: " + " ".join(args), extra={"group": logging_group})
 

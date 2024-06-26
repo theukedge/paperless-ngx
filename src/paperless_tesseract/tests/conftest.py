@@ -12,7 +12,8 @@ def tesseract_parser() -> Generator[RasterisedDocumentParser, None, None]:
         parser = RasterisedDocumentParser(logging_group=None)
         yield parser
     finally:
-        parser.cleanup()
+        if "parser" in locals():
+            parser.cleanup()
 
 
 @pytest.fixture(scope="session")
@@ -38,6 +39,11 @@ def multi_page_digital_pdf(sample_dir: Path) -> Path:
 @pytest.fixture(scope="session")
 def multi_page_images_pdf(sample_dir: Path) -> Path:
     return sample_dir / "multi-page-images.pdf"
+
+
+@pytest.fixture(scope="session")
+def multi_page_mixed_pdf(sample_dir: Path) -> Path:
+    return sample_dir / "multi-page-mixed.pdf"
 
 
 @pytest.fixture(scope="session")
