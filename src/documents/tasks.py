@@ -62,11 +62,15 @@ def index_optimize():
 
 def index_reindex(progress_bar_disable=False):
     documents = Document.objects.all()
+    logger.info(f"Found {documents.count()} documents to reindex")
 
     ix = index.open_index(recreate=True)
+    logger.info("Opened index for reindexing")
 
     with AsyncWriter(ix) as writer:
+        logger.info("Reindexing documents...")
         for document in tqdm.tqdm(documents, disable=progress_bar_disable):
+            logger.debug(f"Reindexing document {document}")
             index.update_document(writer, document)
 
 
